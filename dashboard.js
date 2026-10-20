@@ -4,7 +4,7 @@
 // ============================================================
 
 // ---------- CONFIG ----------
-let API_URL = localStorage.getItem('ppcr_admin_api') || 'https://prc-ppcr-backend-production.up.railway.app/api';
+const API_URL = localStorage.getItem('ppcr_api_url') || 'https://prc-ppcr-backend-production.up.railway.app/api';
 let currentPage = 0;
 let currentLimit = 20;
 let totalReports = 0;
