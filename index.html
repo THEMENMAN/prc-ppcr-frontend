@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PRC PPCR - Pre Hospital Patient Care Report</title>
+
+    <!-- PWA MANIFEST + THEME -->
+       <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#dc2626">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="PRC PPCR">
+    <link rel="icon" type="image/webp" href="/icons/Philippine_Red_Cross_Emblem.svg.webp">
+    <link rel="apple-touch-icon" href="/icons/Philippine_Red_Cross_Emblem.svg.webp">
+
+    <!-- TAILWIND -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- LIBRARIES -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
+
+    <style>
+        body {
+            -webkit-tap-highlight-color: transparent;
+            padding-bottom: 90px;
+            background-color: #f3f4f6;
+        }
+
+        body.offline::before {
+            content: "⚠️ OFFLINE MODE — Data will sync when online";
+            display: block;
+            background: #f59e0b;
+            color: white;
+            text-align: center;
+            padding: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 999;
+        }
+
+        .body-part {
+            fill: #e5e7eb;
+            stroke: #9ca3af;
+            stroke-width: 1.5;
+            cursor: pointer;
+            transition: fill 0.2s ease;
+        }
+        .body-part:hover { fill: #fca5a5; }
+        .body-part.active { fill: #dc2626; stroke: #991b1b; }
+
+        #sig-canvas-patient,
+        #sig-canvas-provider,
+        #sig-canvas-receiving {
+            touch-action: none;
+        }
+
+        @media print {
+            .no-print, nav, header button, .mobile-nav, .action-buttons, .print-hide {
+                display: none !important;
+            }
+            body {
+                background: white;
+                padding: 0;
+                margin: 0;
+                font-size: 10px;
+                color: black;
+            }
+            body.offline::before { display: none; }
+            input[type="text"], input[type="number"], input[type="date"],
+            input[type="time"], select, textarea {
+                border: none !important;
+                border-bottom: 1px solid #000 !important;
+                background: transparent !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                height: auto !important;
+                box-shadow: none !important;
+                border-radius: 0 !important;
+                appearance: none;
+                -webkit-appearance: none;
+            }
+            input[type="checkbox"], input[type="radio"] {
+                appearance: none;
+                -webkit-appearance: none;
+                width: 10px;
+                height: 10px;
+                border: 1px solid #000;
+                border-radius: 2px;
+                margin-right: 4px;
+                vertical-align: middle;
+                display: inline-block;
+            }
+            input[type="checkbox"]:checked, input[type="radio"]:checked {
+                background-color: #000;
+            }
+            .print-break { page-break-before: always; }
+            .print-shadow {
+                box-shadow: none !important;
+                border: 1px solid #ccc !important;
+                border-left: 4px solid #dc2626 !important;
+            }
+            .grid { display: block !important; }
+            .md\:grid-cols-2, .md\:grid-cols-3, .md\:grid-cols-4,
+            .sm\:grid-cols-2 { display: block !important; }
+            .flex { display: block !important; }
+            .space-x-4 > * { margin-bottom: 5px; display: inline-block; }
+            .body-part { fill: #e5e7eb !important; stroke: #000 !important; }
+            .body-part.active { fill: #000 !important; }
+        }
+    </style>
+</head>
+<body class="text-gray-800 font-sans pb-24">
+
+    <!-- ============================================================ -->
+    <!-- HEADER                                                       -->
+    <!-- ============================================================ -->
+    <header class="bg-red-700 text-white shadow-md no-print sticky top-0 z-50">
+        <div class="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
+                      <div class="flex items-center space-x-3">
+                <div class="bg-white p-1 rounded-full w-11 h-11 flex items-center justify-center overflow-hidden border-2 border-white shadow-sm">
+                    <img src="/icons/Philippine_Red_Cross_Emblem.svg.webp" alt="PRC Logo" class="w-full h-full object-contain" id="prc-logo">
+                </div>
+                <div class="hidden sm:block">
+                    <h1 class="text-lg font-bold tracking-wider leading-tight">PHILIPPINE RED CROSS</h1>
+                    <p class="text-[10px] text-red-200">Pre Hospital Patient Care Report (PPCR)</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-2">
+    <!-- IDENTITY BADGE (auto-filled by app.js) -->
+    <div id="identity-badge" class="hidden items-center bg-white/20 rounded px-2 py-1 text-xs">
+        <span id="identity-icon">🙋</span>
+        <span id="identity-name" class="ml-1 max-w-[120px] truncate">Loading…</span>
+    </div>
+
+    <!-- INTERACTIVE SERIAL NUMBER -->
+    <div class="flex items-center bg-red-800 rounded px-2 py-1">
+        <span class="text-[10px] text-red-200 mr-1">S/N:</span>
+        <input type="text" id="serialNo"
+               class="bg-transparent text-white text-xs w-24 outline-none placeholder-red-300"
+               placeholder="000-0000">
+    </div>
+
+    <!-- SYNC ALL BUTTON -->
+    <button onclick="syncAllReports()"
+            class="hidden sm:block bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold py-2 px-3 rounded shadow transition">
+        🔄 Sync
+    </button>
+
+    <!-- SAVE BUTTON -->
+    <button onclick="saveReport()"
+            class="bg-white text-red-700 text-xs font-bold py-2 px-3 rounded shadow hover:bg-gray-100 transition">
+        💾 Save
+    </button>
+</div>
+
+                <!-- SAVE -->
+                <button onclick="saveReport()"
+                        class="bg-white text-red-700 text-xs font-bold py-2 px-3 rounded shadow hover:bg-gray-100 transition">
+                    Save
+                </button>
+            </div>
+        </div>
+
+       <!-- PWA Install Button -->
+<button id="install-pwa-btn" onclick="installPWA()" 
+        class="bg-red-800 hover:bg-red-900 text-white text-xs font-bold py-2 px-3 rounded shadow transition flex items-center gap-2">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+    </svg>
+    <span class="hidden md:inline">Install</span>
+</button>
+    </header>
+
+    <!-- ============================================================ -->
+    <!-- MAIN FORM                                                    -->
+    <!-- ============================================================ -->
+    <main class="max-w-6xl mx-auto px-3 sm:px-4 mt-4 space-y-4 sm:space-y-6">
+
+        <!-- 1. INCIDENT (RED) -->
+        <section class="bg-white rounded-lg shadow-sm sm:shadow-md p-4 sm:p-5 border-l-4 border-red-600 print-shadow">
+            <h3 class="text-base sm:text-lg font-bold text-red-700 border-b pb-2 mb-3">1. INCIDENT INFORMATION</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
+                <div>
+                    <label class="block text-xs sm:text-sm font-semibold mb-1">Nature of Call</label>
+                    <div class="flex space-x-4">
+                        <label class="inline-flex items-center text-sm"><input type="radio" name="nature_call" value="Emergency" class="mr-1.5 w-4 h-4 accent-red-600"> Emergency</label>
+                        <label class="inline-flex items-center text-sm"><input type="radio" name="nature_call" value="Conduction" class="mr-1.5 w-4 h-4 accent-red-600"> Conduction</label>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs sm:text-sm font-semibold mb-1">Type of Emergency</label>
+                    <div class="flex space-x-4">
+                        <label class="inline-flex items-center text-sm"><input type="radio" name="type_emergency" value="Medical" class="mr-1.5 w-4 h-4 accent-red-600"> Medical</label>
+                        <label class="inline-flex items-center text-sm"><input type="radio" name="type_emergency" value="Trauma" class="mr-1.5 w-4 h-4 accent-red-600"> Trauma</label>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs sm:text-sm font-semibold mb-1">Date & Time of Call</label>
+                    <div class="flex gap-2">
+                        <input type="date" name="call_date" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:ring-red-500 focus:border-red-500">
+                        <input type="time" name="call_time" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:ring-red-500 focus:border-red-500">
+                    </div>
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="block text-xs sm:text-sm font-semibold mb-1">Location</label>
+                    <div class="flex items-center gap-2">
+                        <input type="text" name="location" placeholder="Address / Landmark"
+                               class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:ring-red-500 focus:border-red-500">
+                        <label class="inline-flex items-center text-xs text-gray-600 whitespace-nowrap">
+                            <input type="checkbox" name="same_as_address" class="mr-1 w-4 h-4 accent-red-600"> Same as address
+                        </label>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs sm:text-sm font-semibold mb-1">Mobile / Contact</label>
+                    <input type="text" name="mobile" placeholder="Contact Number"
+                           class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:ring-red-500 focus:border-red-500">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+                <div><label class="text-[10px] sm:text-xs font-bold text-gray-500">At Scene</label><input type="time" name="at_scene" class="w-full border rounded px-2 py-1 text-sm"></div>
+                <div><label class="text-[10px] sm:text-xs font-bold text-gray-500">At Patient</label><input type="time" name="at_patient" class="w-full border rounded px-2 py-1 text-sm"></div>
+                <div><label class="text-[10px] sm:text-xs font-bold text-gray-500">Depart Scene</label><input type="time" name="depart_scene" class="w-full border rounded px-2 py-1 text-sm"></div>
+                <div><label class="text-[10px] sm:text-xs font-bold text-gray-500">At Arrival</label><input type="time" name="at_arrival" class="w-full border rounded px-2 py-1 text-sm"></div>
+                <div><label class="text-[10px] sm:text-xs font-bold text-gray-500">At Handover</label><input type="time" name="at_handover" class="w-full border rounded px-2 py-1 text-sm"></div>
+                <div><label class="text-[10px] sm:text-xs font-bold text-gray-500">Clear</label><input type="time" name="clear_time" class="w-full border rounded px-2 py-1 text-sm"></div>
+                <div><label class="text-[10px] sm:text-xs font-bold text-gray-500">Station Code</label><input type="text" name="station_code" placeholder="Code" class="w-full border rounded px-2 py-1 text-sm"></div>
+                <div><label class="text-[10px] sm:text-xs font-bold text-gray-500">Ambulance Unit</label><input type="text" name="ambulance_unit" placeholder="Unit #" class="w-full border rounded px-2 py-1 text-sm"></div>
+            </div>
+            <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-semibold mb-1">Response Area</label>
+                    <div class="flex flex-wrap gap-2 text-xs">
+                        <label><input type="radio" name="response_area" value="Res. Inst." class="mr-1 accent-red-600"> Res. Inst.</label>
+                        <label><input type="radio" name="response_area" value="Ind. Area" class="mr-1 accent-red-600"> Ind. Area</label>
+                        <label><input type="radio" name="response_area" value="Rec. Area" class="mr-1 accent-red-600"> Rec. Area</label>
+                        <label><input type="radio" name="response_area" value="Street/Rd" class="mr-1 accent-red-600"> Street/Rd</label>
+                        <label><input type="radio" name="response_area" value="Com. Area" class="mr-1 accent-red-600"> Com. Area</label>
+                        <label><input type="radio" name="response_area" value="Others" class="mr-1 accent-red-600"> Others</label>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold mb-1">Facility Type (Destination)</label>
+                    <div class="flex flex-wrap gap-2 text-xs">
+                        <label><input type="radio" name="facility_type" value="Home" class="mr-1 accent-red-600"> Home</label>
+                        <label><input type="radio" name="facility_type" value="Hospital" class="mr-1 accent-red-600"> Hospital</label>
+                        <label><input type="radio" name="facility_type" value="Clinic" class="mr-1 accent-red-600"> Clinic</label>
+                        <label><input type="radio" name="facility_type" value="Institution" class="mr-1 accent-red-600"> Institution</label>
+                        <label><input type="radio" name="facility_type" value="Air/Sea Port" class="mr-1 accent-red-600"> Air/Sea Port</label>
+                        <label><input type="radio" name="facility_type" value="Others" class="mr-1 accent-red-600"> Others</label>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. PATIENT (BLUE) -->
+        <section class="bg-white rounded-lg shadow-sm sm:shadow-md p-4 sm:p-5 border-l-4 border-blue-600 print-shadow">
+            <h3 class="text-base sm:text-lg font-bold text-blue-700 border-b pb-2 mb-3">2. PATIENT INFORMATION</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+                <div class="sm:col-span-2">
+                    <label class="block text-xs sm:text-sm font-semibold mb-1">Patient Name</label>
+                    <input type="text" name="patient_name" placeholder="Last, First, MI" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs sm:text-sm font-semibold mb-1">Age</label>
+                    <input type="number" name="patient_age" placeholder="Years" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs sm:text-sm font-semibold mb-1">Gender</label>
+                    <select name="patient_gender" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white">
+                        <option value="">Select...</option>
+                        <option>Male</option><option>Female</option>
+                    </select>
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="block text-xs sm:text-sm font-semibold mb-1">Permanent Address</label>
+                    <input type="text" name="patient_address" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs sm:text-sm font-semibold mb-1">Contact No.</label>
+                    <input type="text" name="patient_contact" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs sm:text-sm font-semibold mb-1">Next of Kin (NOK)</label>
+                    <input type="text" name="nok_name" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs sm:text-sm font-semibold mb-1">NOK Contact No.</label>
+                    <input type="text" name="nok_contact" class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+                </div>
+            </div>
+            <div class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 bg-blue-50 p-3 rounded border border-blue-200">
+                <label class="inline-flex items-center text-xs sm:text-sm font-medium"><input type="checkbox" name="treatment_refused" class="mr-2 w-4 h-4 accent-blue-600"> Treatment Refused</label>
+                <label class="inline-flex items-center text-xs sm:text-sm font-medium"><input type="checkbox" name="transport_refused" class="mr-2 w-4 h-4 accent-blue-600"> Transport Refused</label>
+                <label class="inline-flex items-center text-xs sm:text-sm font-medium"><input type="checkbox" name="treat_scene" class="mr-2 w-4 h-4 accent-blue-600"> Treat at Scene</label>
+                <label class="inline-flex items-center text-xs sm:text-sm font-medium"><input type="checkbox" name="stood_down" class="mr-2 w-4 h-4 accent-blue-600"> Stood Down</label>
+            </div>
+            <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs sm:text-sm font-semibold mb-1">Time of Onset</label>
+                    <input type="time" name="onset_time" class="w-full border rounded px-2 py-1.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs sm:text-sm font-semibold mb-1">Date of Onset</label>
+                    <input type="date" name="onset_date" class="w-full border rounded px-2 py-1.5 text-sm">
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. PRIMARY SURVEY (ORANGE) -->
+        <section class="bg-white rounded-lg shadow-sm sm:shadow-md p-4 sm:p-5 border-l-4 border-orange-500 print-shadow">
+            <h3 class="text-base sm:text-lg font-bold text-orange-700 border-b pb-2 mb-3">3. PRIMARY SURVEY</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="space-y-3">
+                    <div>
+                        <span class="block text-xs sm:text-sm font-semibold mb-1">C-Spine:</span>
+                        <div class="flex space-x-4 text-sm">
+                            <label><input type="radio" name="cspine" value="Suspected" class="mr-1 w-4 h-4 accent-orange-600"> Suspected</label>
+                            <label><input type="radio" name="cspine" value="Not Indicated" class="mr-1 w-4 h-4 accent-orange-600"> Not Indicated</label>
+                        </div>
+                    </div>
+                    <div>
+                        <span class="block text-xs sm:text-sm font-semibold mb-1">Airway:</span>
+                        <div class="flex flex-wrap gap-3 text-sm">
+                            <label><input type="radio" name="airway" value="Clear" class="mr-1 w-4 h-4 accent-orange-600"> Clear</label>
+                            <label><input type="radio" name="airway" value="Partially Obstructed" class="mr-1 w-4 h-4 accent-orange-600"> Partially Obstructed</label>
+                            <label><input type="radio" name="airway" value="Obstructed" class="mr-1 w-4 h-4 accent-orange-600"> Obstructed</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="space-y-3">
+                    <div>
+                        <span class="block text-xs sm:text-sm font-semibold mb-1">Breathing:</span>
+                        <div class="flex flex-wrap gap-3 text-sm">
+                            <label><input type="radio" name="breathing" value="Normal" class="mr-1 w-4 h-4 accent-orange-600"> Normal</label>
+                            <label><input type="radio" name="breathing" value="Fast" class="mr-1 w-4 h-4 accent-orange-600"> Fast</label>
+                            <label><input type="radio" name="breathing" value="Slow" class="mr-1 w-4 h-4 accent-orange-600"> Slow</label>
+                            <label><input type="radio" name="breathing" value="Absent" class="mr-1 w-4 h-4 accent-orange-600"> Absent</label>
+                        </div>
+                    </div>
+                    <div>
+                        <span class="block text-xs sm:text-sm font-semibold mb-1">Circulation:</span>
+                        <div class="flex flex-wrap gap-3 text-sm">
+                            <label class="font-medium text-gray-600">Pulse:</label>
+                            <label><input type="radio" name="pulse" value="Present" class="mr-1 w-4 h-4 accent-orange-600"> Present</label>
+                            <label><input type="radio" name="pulse" value="Absent" class="mr-1 w-4 h-4 accent-orange-600"> Absent</label>
+                            <label><input type="radio" name="pulse" value="Haemorrhage" class="mr-1 w-4 h-4 accent-orange-600"> Haemorrhage</label>
+                        </div>
+                        <div class="flex flex-wrap gap-3 text-sm mt-1">
+                            <label class="font-medium text-gray-600">Skin:</label>
+                            <label><input type="radio" name="skin" value="Normal" class="mr-1 w-4 h-4 accent-orange-600"> Normal</label>
+                            <label><input type="radio" name="skin" value="Pale" class="mr-1 w-4 h-4 accent-orange-600"> Pale</label>
+                            <label><input type="radio" name="skin" value="Flushed" class="mr-1 w-4 h-4 accent-orange-600"> Flushed</label>
+                            <label><input type="radio" name="skin" value="Cyanosed" class="mr-1 w-4 h-4 accent-orange-600"> Cyanosed</label>
+                        </div>
+                        <div class="flex flex-wrap gap-3 text-sm mt-1">
+                            <label class="font-medium text-gray-600">Cap-Refill:</label>
+                            <label><input type="radio" name="caprefill" value="< 2 SEC" class="mr-1 w-4 h-4 accent-orange-600"> &lt; 2 SEC</label>
+                            <label><input type="radio" name="caprefill" value="> 2 SEC" class="mr-1 w-4 h-4 accent-orange-600"> &gt; 2 SEC</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. VITAL SIGNS (EMERALD) -->
+       <!-- 4. VITAL SIGNS (EMERALD) -->
+<section class="bg-white rounded-lg shadow-sm sm:shadow-md p-4 sm:p-5 border-l-4 border-emerald-600 print-shadow">
+    <h3 class="text-base sm:text-lg font-bold text-emerald-700 border-b pb-2 mb-3">4. VITAL SIGNS</h3>
+    <div class="overflow-x-auto">
+        <div class="min-w-[500px]">
+            <div class="grid grid-cols-4 gap-2 mb-2 font-bold text-xs sm:text-sm text-center">
+                <div class="text-left">Observation</div>
+                <div>Time (1)</div>
+                <div>Time (2)</div>
+                <div>Time (3)</div>
+            </div>
+            <div class="space-y-2 text-sm">
+                <div class="grid grid-cols-4 gap-2 items-center border-b pb-1">
+                    <div class="font-semibold text-xs">Pulse Rate & Rhythm</div>
+                    <input type="text" name="pulse_1" class="border rounded px-1 py-0.5 w-full" placeholder="BPM">
+                    <input type="text" name="pulse_2" class="border rounded px-1 py-0.5 w-full" placeholder="BPM">
+                    <input type="text" name="pulse_3" class="border rounded px-1 py-0.5 w-full" placeholder="BPM">
+                </div>
+                <div class="grid grid-cols-4 gap-2 items-center border-b pb-1">
+                    <div class="font-semibold text-xs">Respiratory Rate</div>
+                    <input type="text" name="rr_1" class="border rounded px-1 py-0.5 w-full" placeholder="BPM">
+                    <input type="text" name="rr_2" class="border rounded px-1 py-0.5 w-full" placeholder="BPM">
+                    <input type="text" name="rr_3" class="border rounded px-1 py-0.5 w-full" placeholder="BPM">
+                </div>
+                <div class="grid grid-cols-4 gap-2 items-center border-b pb-1">
+                    <div class="font-semibold text-xs">Resp. Quality (1-5)</div>
+                    <input type="text" name="rq_1" class="border rounded px-1 py-0.5 w-full" placeholder="Normal">
+                    <input type="text" name="rq_2" class="border rounded px-1 py-0.5 w-full" placeholder="Normal">
+                    <input type="text" name="rq_3" class="border rounded px-1 py-0.5 w-full" placeholder="Normal">
+                </div>
+                <div class="grid grid-cols-4 gap-2 items-center border-b pb-1">
+                    <div class="font-semibold text-xs">SpO2</div>
+                    <input type="text" name="spo2_1" class="border rounded px-1 py-0.5 w-full" placeholder="%">
+                    <input type="text" name="spo2_2" class="border rounded px-1 py-0.5 w-full" placeholder="%">
+                    <input type="text" name="spo2_3" class="border rounded px-1 py-0.5 w-full" placeholder="%">
+                </div>
+                <div class="grid grid-cols-4 gap-2 items-center border-b pb-1">
+                    <div class="font-semibold text-xs">Blood Pressure</div>
+                    <input type="text" name="bp_1" class="border rounded px-1 py-0.5 w-full" placeholder="BP">
+                    <input type="text" name="bp_2" class="border rounded px-1 py-0.5 w-full" placeholder="BP">
+                    <input type="text" name="bp_3" class="border rounded px-1 py-0.5 w-full" placeholder="BP">
+                </div>
+                <div class="grid grid-cols-4 gap-2 items-center border-b pb-1">
+                    <div class="font-semibold text-xs">Temp (°C)</div>
+                    <input type="text" name="temp_1" class="border rounded px-1 py-0.5 w-full" placeholder="°C">
+                    <input type="text" name="temp_2" class="border rounded px-1 py-0.5 w-full" placeholder="°C">
+                    <input type="text" name="temp_3" class="border rounded px-1 py-0.5 w-full" placeholder="°C">
+                </div>
+                <div class="grid grid-cols-4 gap-2 items-center border-b pb-1">
+                    <div class="font-semibold text-xs">Pupils (Size/Reaction)</div>
+                    <input type="text" name="pupils_1" class="border rounded px-1 py-0.5 w-full" placeholder="Normal">
+                    <input type="text" name="pupils_2" class="border rounded px-1 py-0.5 w-full" placeholder="Normal">
+                    <input type="text" name="pupils_3" class="border rounded px-1 py-0.5 w-full" placeholder="Normal">
+                </div>
+                <!-- PAIN SCORE — Now a dropdown 0-10 -->
+                <div class="grid grid-cols-4 gap-2 items-center border-b pb-1">
+                    <div class="font-semibold text-xs">Pain Score (0-10)</div>
+                    <select name="pain_1" class="border rounded px-1 py-0.5 w-full text-xs bg-white">
+                        <option value="">--</option>
+                        <option>0</option><option>1</option><option>2</option><option>3</option>
+                        <option>4</option><option>5</option><option>6</option><option>7</option>
+                        <option>8</option><option>9</option><option>10</option>
+                    </select>
+                    <select name="pain_2" class="border rounded px-1 py-0.5 w-full text-xs bg-white">
+                        <option value="">--</option>
+                        <option>0</option><option>1</option><option>2</option><option>3</option>
+                        <option>4</option><option>5</option><option>6</option><option>7</option>
+                        <option>8</option><option>9</option><option>10</option>
+                    </select>
+                    <select name="pain_3" class="border rounded px-1 py-0.5 w-full text-xs bg-white">
+                        <option value="">--</option>
+                        <option>0</option><option>1</option><option>2</option><option>3</option>
+                        <option>4</option><option>5</option><option>6</option><option>7</option>
+                        <option>8</option><option>9</option><option>10</option>
+                    </select>
+                </div>
+                <div class="grid grid-cols-4 gap-2 items-center border-b pb-1">
+                    <div class="font-semibold text-xs">Blood Glucose</div>
+                    <input type="text" name="bg_1" class="border rounded px-1 py-0.5 w-full" placeholder="mg/dL">
+                    <input type="text" name="bg_2" class="border rounded px-1 py-0.5 w-full" placeholder="mg/dL">
+                    <input type="text" name="bg_3" class="border rounded px-1 py-0.5 w-full" placeholder="mg/dL">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- GCS with AUTO-CALCULATE -->
+    <div class="mt-4 bg-emerald-50 p-3 rounded border border-emerald-200">
+        <h4 class="font-bold text-xs sm:text-sm mb-2 text-emerald-800">Glasgow Coma Scale (GCS)</h4>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+            <div>
+                <label class="block font-semibold text-[10px] sm:text-xs mb-1">Eye (4-1)</label>
+                <select name="gcs_eye" id="gcs_eye" class="w-full border rounded px-1 py-1 text-xs bg-white" onchange="calculateGCS()">
+                    <option value="">--</option>
+                    <option value="4">4. Spontaneous</option>
+                    <option value="3">3. To voice</option>
+                    <option value="2">2. To pain</option>
+                    <option value="1">1. None</option>
+                </select>
+            </div>
+            <div>
+                <label class="block font-semibold text-[10px] sm:text-xs mb-1">Verbal (5-1)</label>
+                <select name="gcs_verbal" id="gcs_verbal" class="w-full border rounded px-1 py-1 text-xs bg-white" onchange="calculateGCS()">
+                    <option value="">--</option>
+                    <option value="5">5. Oriented</option>
+                    <option value="4">4. Confused</option>
+                    <option value="3">3. Inappropriate Words</option>
+                    <option value="2">2. Incomprehensible Sounds</option>
+                    <option value="1">1. None</option>
+                </select>
+            </div>
+            <div>
+                <label class="block font-semibold text-[10px] sm:text-xs mb-1">Motor (6-1)</label>
+                <select name="gcs_motor" id="gcs_motor" class="w-full border rounded px-1 py-1 text-xs bg-white" onchange="calculateGCS()">
+                    <option value="">--</option>
+                    <option value="6">6. Obeys</option>
+                    <option value="5">5. Local pain</option>
+                    <option value="4">4. Flex to pain</option>
+                    <option value="3">3. Abnormal flexion</option>
+                    <option value="2">2. Ext. to pain</option>
+                    <option value="1">1. None</option>
+                </select>
+            </div>
+            <div>
+                <label class="block font-semibold text-[10px] sm:text-xs mb-1">Total GCS <span class="text-emerald-600">(auto)</span></label>
+                <input type="number" name="gcs_total" id="gcs_total" readonly
+                       class="w-full border rounded px-2 py-1 font-bold text-emerald-700 text-xs bg-emerald-100 cursor-not-allowed"
+                       placeholder="3-15">
+            </div>
+        </div>
+        <p class="text-[10px] text-emerald-700 mt-2">💡 Total is calculated automatically from Eye + Verbal + Motor.</p>
+    </div>
+</section>
+
+        <!-- 5. CARE MANAGEMENT (PURPLE) -->
+        <section class="bg-white rounded-lg shadow-sm sm:shadow-md p-4 sm:p-5 border-l-4 border-purple-600 print-shadow">
+            <h3 class="text-base sm:text-lg font-bold text-purple-700 border-b pb-2 mb-3">5. CARE MANAGEMENT</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+                <div class="bg-purple-50 p-3 rounded border border-purple-100">
+                    <h4 class="font-bold text-purple-800 text-xs sm:text-sm mb-2">Airway</h4>
+                    <div class="space-y-2">
+                        <label class="flex items-center"><input type="checkbox" value="Manoeuvre" name="cm_airway" class="mr-2 w-4 h-4 accent-purple-600"> Manoeuvre</label>
+                        <label class="flex items-center"><input type="checkbox" value="Suction" name="cm_airway" class="mr-2 w-4 h-4 accent-purple-600"> Suction</label>
+                        <label class="flex items-center"><input type="checkbox" value="Manual FB Clearance" name="cm_airway" class="mr-2 w-4 h-4 accent-purple-600"> Manual FB Clearance</label>
+                        <label class="flex items-center"><input type="checkbox" value="OPA / NPA" name="cm_airway" class="mr-2 w-4 h-4 accent-purple-600"> OPA / NPA</label>
+                        <div class="flex items-center"><input type="checkbox" name="cm_airway_other_check" class="mr-2 w-4 h-4 accent-purple-600"> Others: <input type="text" name="cm_airway_other" class="ml-1 border-b border-gray-400 w-full bg-transparent outline-none text-xs"></div>
+                    </div>
+                </div>
+                <div class="bg-purple-50 p-3 rounded border border-purple-100">
+                    <h4 class="font-bold text-purple-800 text-xs sm:text-sm mb-2">Breathing</h4>
+                    <div class="space-y-2">
+                        <label class="flex items-center"><input type="checkbox" value="Pocket Mask" name="cm_breathing" class="mr-2 w-4 h-4 accent-purple-600"> Pocket Mask</label>
+                        <label class="flex items-center"><input type="checkbox" value="BVM" name="cm_breathing" class="mr-2 w-4 h-4 accent-purple-600"> BVM</label>
+                        <label class="flex items-center"><input type="checkbox" value="Simple Facemask" name="cm_breathing" class="mr-2 w-4 h-4 accent-purple-600"> Simple Facemask</label>
+                        <label class="flex items-center"><input type="checkbox" value="NRB Mask" name="cm_breathing" class="mr-2 w-4 h-4 accent-purple-600"> NRB Mask</label>
+                        <label class="flex items-center"><input type="checkbox" value="Nasal Cannula" name="cm_breathing" class="mr-2 w-4 h-4 accent-purple-600"> Nasal Cannula</label>
+                        <label class="flex items-center"><input type="checkbox" value="SAO2 Monitoring" name="cm_breathing" class="mr-2 w-4 h-4 accent-purple-600"> SAO2 Monitoring</label>
+                        <div class="flex items-center"><input type="checkbox" name="cm_breathing_other_check" class="mr-2 w-4 h-4 accent-purple-600"> Others: <input type="text" name="cm_breathing_other" class="ml-1 border-b border-gray-400 w-full bg-transparent outline-none text-xs"></div>
+                    </div>
+                </div>
+                <div class="bg-purple-50 p-3 rounded border border-purple-100">
+                    <h4 class="font-bold text-purple-800 text-xs sm:text-sm mb-2">Circulation Support</h4>
+                    <div class="space-y-2">
+                        <label class="flex items-center"><input type="checkbox" value="Chest Compression" name="cm_circulation" class="mr-2 w-4 h-4 accent-purple-600"> Chest Compression</label>
+                        <label class="flex items-center"><input type="checkbox" value="Defibrillation" name="cm_circulation" class="mr-2 w-4 h-4 accent-purple-600"> Defibrillation</label>
+                        <label class="flex items-center"><input type="checkbox" value="Haemorrhage Control" name="cm_circulation" class="mr-2 w-4 h-4 accent-purple-600"> Haemorrhage Control</label>
+                        <div class="flex items-center"><input type="checkbox" name="cm_circulation_other_check" class="mr-2 w-4 h-4 accent-purple-600"> Others: <input type="text" name="cm_circulation_other" class="ml-1 border-b border-gray-400 w-full bg-transparent outline-none text-xs"></div>
+                    </div>
+                </div>
+                <div class="bg-purple-50 p-3 rounded border border-purple-100">
+                    <h4 class="font-bold text-purple-800 text-xs sm:text-sm mb-2">Immobilization / Extrication</h4>
+                    <div class="space-y-2">
+                        <label class="flex items-center"><input type="checkbox" value="Cervical Collar" name="cm_immobilization" class="mr-2 w-4 h-4 accent-purple-600"> Cervical Collar</label>
+                        <label class="flex items-center"><input type="checkbox" value="Spinal Board" name="cm_immobilization" class="mr-2 w-4 h-4 accent-purple-600"> Spinal Board</label>
+                        <label class="flex items-center"><input type="checkbox" value="Rigid Splint" name="cm_immobilization" class="mr-2 w-4 h-4 accent-purple-600"> Rigid Splint</label>
+                        <label class="flex items-center"><input type="checkbox" value="Traction Splint" name="cm_immobilization" class="mr-2 w-4 h-4 accent-purple-600"> Traction Splint</label>
+                        <label class="flex items-center"><input type="checkbox" value="SAM Splint" name="cm_immobilization" class="mr-2 w-4 h-4 accent-purple-600"> SAM Splint</label>
+                        <label class="flex items-center"><input type="checkbox" value="KED/Half Board" name="cm_immobilization" class="mr-2 w-4 h-4 accent-purple-600"> KED/Half Board</label>
+                        <div class="flex items-center"><input type="checkbox" name="cm_immobilization_other_check" class="mr-2 w-4 h-4 accent-purple-600"> Others: <input type="text" name="cm_immobilization_other" class="ml-1 border-b border-gray-400 w-full bg-transparent outline-none text-xs"></div>
+                    </div>
+                </div>
+                <div class="bg-purple-50 p-3 rounded border border-purple-100">
+                    <h4 class="font-bold text-purple-800 text-xs sm:text-sm mb-2">Wound Care</h4>
+                    <div class="space-y-2">
+                        <label class="flex items-center"><input type="checkbox" value="Minor Injury TX" name="cm_wound" class="mr-2 w-4 h-4 accent-purple-600"> Minor Injury TX</label>
+                        <label class="flex items-center"><input type="checkbox" value="Bleeding Control" name="cm_wound" class="mr-2 w-4 h-4 accent-purple-600"> Bleeding Control</label>
+                        <label class="flex items-center"><input type="checkbox" value="Cleaning/Disinfecting" name="cm_wound" class="mr-2 w-4 h-4 accent-purple-600"> Cleaning/Disinfecting</label>
+                        <label class="flex items-center"><input type="checkbox" value="Dressing" name="cm_wound" class="mr-2 w-4 h-4 accent-purple-600"> Dressing</label>
+                        <div class="flex items-center"><input type="checkbox" name="cm_wound_other_check" class="mr-2 w-4 h-4 accent-purple-600"> Others: <input type="text" name="cm_wound_other" class="ml-1 border-b border-gray-400 w-full bg-transparent outline-none text-xs"></div>
+                    </div>
+                </div>
+                <div class="bg-purple-50 p-3 rounded border border-purple-100">
+                    <h4 class="font-bold text-purple-800 text-xs sm:text-sm mb-2">Miscellaneous</h4>
+                    <div class="space-y-2">
+                        <label class="flex items-center"><input type="checkbox" value="Cold/Warm Compress" name="cm_misc" class="mr-2 w-4 h-4 accent-purple-600"> Cold/Warm Compress</label>
+                        <label class="flex items-center"><input type="checkbox" value="Positioning" name="cm_misc" class="mr-2 w-4 h-4 accent-purple-600"> Positioning</label>
+                        <div class="flex items-center"><input type="checkbox" name="cm_misc_other_check" class="mr-2 w-4 h-4 accent-purple-600"> Others: <input type="text" name="cm_misc_other" class="ml-1 border-b border-gray-400 w-full bg-transparent outline-none text-xs"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 6. PATIENT ASSESSMENT (TEAL) -->
+        <section class="bg-white rounded-lg shadow-sm sm:shadow-md p-4 sm:p-5 border-l-4 border-teal-600 print-shadow">
+            <h3 class="text-base sm:text-lg font-bold text-teal-700 border-b pb-2 mb-3">6. PATIENT ASSESSMENT & SECONDARY SURVEY</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="space-y-4">
+                    <div>
+                        <span class="block font-semibold text-xs sm:text-sm mb-1">Level of Consciousness</span>
+                        <div class="flex flex-wrap gap-3 text-sm mb-2">
+                            <label class="flex items-center">Loss of Consciousness before Arrival:</label>
+                            <label class="flex items-center"><input type="radio" name="loc_loss" value="Yes" class="mr-1 w-4 h-4 accent-teal-600"> Yes</label>
+                            <label class="flex items-center"><input type="radio" name="loc_loss" value="No" class="mr-1 w-4 h-4 accent-teal-600"> No</label>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-sm">
+                            <label class="flex items-center"><input type="radio" name="loc_arrival" value="Alert" class="mr-1 w-4 h-4 accent-teal-600"> Alert</label>
+                            <label class="flex items-center"><input type="radio" name="loc_arrival" value="Verbal Response" class="mr-1 w-4 h-4 accent-teal-600"> Verbal Response</label>
+                            <label class="flex items-center"><input type="radio" name="loc_arrival" value="Painful Stimuli" class="mr-1 w-4 h-4 accent-teal-600"> Painful Stimuli</label>
+                            <label class="flex items-center"><input type="radio" name="loc_arrival" value="Unresponsiveness" class="mr-1 w-4 h-4 accent-teal-600"> Unresponsiveness</label>
+                        </div>
+                    </div>
+
+                    <div>
+                        <span class="block font-semibold text-xs sm:text-sm mb-1">Physical Exam Findings (Tap body parts)</span>
+                        <div class="border rounded-lg bg-teal-50 p-2 flex justify-center border-teal-200">
+                            <svg viewBox="0 0 200 400" class="w-48 h-auto">
+                                <circle id="head" class="body-part" cx="100" cy="40" r="25" data-part="Head" />
+                                <rect id="neck" class="body-part" x="90" y="65" width="20" height="15" data-part="Neck" />
+                                <rect id="chest" class="body-part" x="60" y="80" width="80" height="60" rx="5" data-part="Chest" />
+                                <rect id="abdomen" class="body-part" x="65" y="140" width="70" height="50" rx="5" data-part="Abdomen" />
+                                <rect id="pelvis" class="body-part" x="70" y="190" width="60" height="30" rx="5" data-part="Pelvis" />
+                                <rect id="larm" class="body-part" x="25" y="80" width="30" height="100" rx="10" data-part="Left Arm" />
+                                <rect id="rarm" class="body-part" x="145" y="80" width="30" height="100" rx="10" data-part="Right Arm" />
+                                <rect id="lleg" class="body-part" x="70" y="220" width="25" height="120" rx="8" data-part="Left Leg" />
+                                <rect id="rleg" class="body-part" x="105" y="220" width="25" height="120" rx="8" data-part="Right Leg" />
+                            </svg>
+                        </div>
+                        <div class="mt-2 flex flex-wrap gap-2 text-[10px]">
+                            <span class="flex items-center"><span class="w-3 h-3 bg-gray-300 rounded mr-1"></span> Normal</span>
+                            <span class="flex items-center"><span class="w-3 h-3 bg-red-600 rounded mr-1"></span> Injured</span>
+                        </div>
+                    </div>
+
+                    <div>
+                        <span class="block font-semibold text-xs sm:text-sm mb-1">Physical Exam Findings</span>
+                        <div class="grid grid-cols-3 gap-2 text-xs sm:text-sm bg-teal-50 p-2 rounded border border-teal-100">
+                            <label class="flex items-center"><input type="checkbox" value="B Burn" name="exam_findings" class="mr-1 w-4 h-4 accent-teal-600"> B Burn</label>
+                            <label class="flex items-center"><input type="checkbox" value="C Contusion" name="exam_findings" class="mr-1 w-4 h-4 accent-teal-600"> C Contusion</label>
+                            <label class="flex items-center"><input type="checkbox" value="D Dislocation" name="exam_findings" class="mr-1 w-4 h-4 accent-teal-600"> D Dislocation</label>
+                            <label class="flex items-center"><input type="checkbox" value="F Fracture" name="exam_findings" class="mr-1 w-4 h-4 accent-teal-600"> F Fracture</label>
+                            <label class="flex items-center"><input type="checkbox" value="N Numbness" name="exam_findings" class="mr-1 w-4 h-4 accent-teal-600"> N Numbness</label>
+                            <label class="flex items-center"><input type="checkbox" value="P Pain" name="exam_findings" class="mr-1 w-4 h-4 accent-teal-600"> P Pain</label>
+                            <label class="flex items-center"><input type="checkbox" value="R Rash" name="exam_findings" class="mr-1 w-4 h-4 accent-teal-600"> R Rash</label>
+                            <label class="flex items-center"><input type="checkbox" value="S Swelling" name="exam_findings" class="mr-1 w-4 h-4 accent-teal-600"> S Swelling</label>
+                            <label class="flex items-center"><input type="checkbox" value="W Wound" name="exam_findings" class="mr-1 w-4 h-4 accent-teal-600"> W Wound</label>
+                        </div>
+                        <div class="flex flex-wrap items-center mt-2 text-xs sm:text-sm gap-2">
+                            <label class="font-semibold">Burn Class:</label>
+                            <label class="flex items-center"><input type="radio" name="burn_class" value="Critical" class="mr-1 w-4 h-4 accent-teal-600"> Critical</label>
+                            <label class="flex items-center"><input type="radio" name="burn_class" value="Moderate" class="mr-1 w-4 h-4 accent-teal-600"> Moderate</label>
+                            <label class="flex items-center"><input type="radio" name="burn_class" value="Minor" class="mr-1 w-4 h-4 accent-teal-600"> Minor</label>
+                        </div>
+                        <div class="mt-2 text-sm flex items-center gap-2">
+                            <label class="font-semibold">Burn %: </label>
+                            <input type="text" name="burn_percent" class="border-b border-gray-400 w-20 outline-none">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-3 text-sm">
+                    <div class="bg-teal-50 p-3 rounded border border-teal-100">
+                        <label class="block font-bold text-teal-800 text-xs sm:text-sm">S - Signs and Symptoms</label>
+                        <textarea name="sample_s" class="w-full border rounded p-1 mt-1 text-sm" rows="2"></textarea>
+                    </div>
+                    <div class="bg-teal-50 p-3 rounded border border-teal-100">
+                        <label class="block font-bold text-teal-800 text-xs sm:text-sm">A - Allergies</label>
+                        <textarea name="sample_a" class="w-full border rounded p-1 mt-1 text-sm" rows="1"></textarea>
+                    </div>
+                    <div class="bg-teal-50 p-3 rounded border border-teal-100">
+                        <label class="block font-bold text-teal-800 text-xs sm:text-sm">M - Medications</label>
+                        <textarea name="sample_m" class="w-full border rounded p-1 mt-1 text-sm" rows="1"></textarea>
+                    </div>
+                    <div class="bg-teal-50 p-3 rounded border border-teal-100">
+                        <label class="block font-bold text-teal-800 text-xs sm:text-sm">P - Past Medical History</label>
+                        <textarea name="sample_p" class="w-full border rounded p-1 mt-1 text-sm" rows="2"></textarea>
+                    </div>
+                    <div class="bg-teal-50 p-3 rounded border border-teal-100">
+                        <label class="block font-bold text-teal-800 text-xs sm:text-sm">L - Last Intake</label>
+                        <input type="text" name="sample_l" class="w-full border rounded p-1 mt-1 text-sm">
+                    </div>
+                    <div class="bg-teal-50 p-3 rounded border border-teal-100">
+                        <label class="block font-bold text-teal-800 text-xs sm:text-sm">E - Event</label>
+                        <textarea name="sample_e" class="w-full border rounded p-1 mt-1 text-sm" rows="2"></textarea>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 7. NATURE OF ILLNESS (AMBER) -->
+        <section class="bg-white rounded-lg shadow-sm sm:shadow-md p-4 sm:p-5 border-l-4 border-amber-500 print-shadow">
+            <h3 class="text-base sm:text-lg font-bold text-amber-700 border-b pb-2 mb-3">7. NATURE OF ILLNESS & MECHANISM OF INJURY</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+                <div>
+                    <h4 class="font-bold text-gray-700 mb-2 text-xs sm:text-sm">Nature of Illness</h4>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="flex items-center"><input type="checkbox" value="Cardiac" name="nature_illness" class="mr-1 w-4 h-4 accent-amber-600"> Cardiac</label>
+                        <label class="flex items-center"><input type="checkbox" value="Neurological" name="nature_illness" class="mr-1 w-4 h-4 accent-amber-600"> Neurological</label>
+                        <label class="flex items-center"><input type="checkbox" value="OB/Gynae" name="nature_illness" class="mr-1 w-4 h-4 accent-amber-600"> OB/Gynae</label>
+                        <label class="flex items-center"><input type="checkbox" value="Respiratory" name="nature_illness" class="mr-1 w-4 h-4 accent-amber-600"> Respiratory</label>
+                        <label class="flex items-center"><input type="checkbox" value="Trauma" name="nature_illness" class="mr-1 w-4 h-4 accent-amber-600"> Trauma</label>
+                        <label class="flex items-center"><input type="checkbox" value="Medical" name="nature_illness" class="mr-1 w-4 h-4 accent-amber-600"> Medical</label>
+                        <label class="flex items-center"><input type="checkbox" value="General" name="nature_illness" class="mr-1 w-4 h-4 accent-amber-600"> General</label>
+                    </div>
+                </div>
+                <div>
+                    <h4 class="font-bold text-gray-700 mb-2 text-xs sm:text-sm">Mechanism of Injury</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <label class="flex items-center"><input type="checkbox" value="Assault" name="mechanism" class="mr-1 w-4 h-4 accent-amber-600"> Assault</label>
+                        <label class="flex items-center"><input type="checkbox" value="Attack/Bite" name="mechanism" class="mr-1 w-4 h-4 accent-amber-600"> Attack/Bite</label>
+                        <label class="flex items-center"><input type="checkbox" value="Chemical Poisoning" name="mechanism" class="mr-1 w-4 h-4 accent-amber-600"> Chemical Poisoning</label>
+                        <label class="flex items-center"><input type="checkbox" value="Drowning" name="mechanism" class="mr-1 w-4 h-4 accent-amber-600"> Drowning</label>
+                        <label class="flex items-center"><input type="checkbox" value="Electrocution" name="mechanism" class="mr-1 w-4 h-4 accent-amber-600"> Electrocution</label>
+                        <label class="flex items-center"><input type="checkbox" value="Excessive Heat" name="mechanism" class="mr-1 w-4 h-4 accent-amber-600"> Excessive Heat</label>
+                        <label class="flex items-center"><input type="checkbox" value="Fall" name="mechanism" class="mr-1 w-4 h-4 accent-amber-600"> Fall</label>
+                        <label class="flex items-center"><input type="checkbox" value="Firearm Injury" name="mechanism" class="mr-1 w-4 h-4 accent-amber-600"> Firearm Injury</label>
+                        <label class="flex items-center"><input type="checkbox" value="RTA Bicycle" name="mechanism" class="mr-1 w-4 h-4 accent-amber-600"> RTA Bicycle</label>
+                        <label class="flex items-center"><input type="checkbox" value="RTA Motorbike" name="mechanism" class="mr-1 w-4 h-4 accent-amber-600"> RTA Motorbike</label>
+                        <label class="flex items-center"><input type="checkbox" value="RTA Pedestrian" name="mechanism" class="mr-1 w-4 h-4 accent-amber-600"> RTA Pedestrian</label>
+                        <label class="flex items-center"><input type="checkbox" value="RTA Vehicle" name="mechanism" class="mr-1 w-4 h-4 accent-amber-600"> RTA Vehicle</label>
+                        <label class="flex items-center"><input type="checkbox" value="Water/Transport" name="mechanism" class="mr-1 w-4 h-4 accent-amber-600"> Water/Transport</label>
+                        <label class="flex items-center"><input type="checkbox" value="Injury to Child" name="mechanism" class="mr-1 w-4 h-4 accent-amber-600"> Injury to Child</label>
+                        <label class="flex items-center"><input type="checkbox" value="Machinery" name="mechanism" class="mr-1 w-4 h-4 accent-amber-600"> Machinery</label>
+                        <div class="flex items-center"><input type="checkbox" name="mechanism_other_check" class="mr-1 w-4 h-4 accent-amber-600"> Others: <input type="text" name="mechanism_other" class="ml-1 border-b border-gray-400 w-full bg-transparent outline-none text-xs"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 8. NARRATIVE (INDIGO) -->
+        <section class="bg-white rounded-lg shadow-sm sm:shadow-md p-4 sm:p-5 border-l-4 border-indigo-600 print-shadow print-break">
+            <h3 class="text-base sm:text-lg font-bold text-indigo-700 border-b pb-2 mb-3">8. NARRATIVE & SPECIAL CIRCUMSTANCES</h3>
+
+            <div class="mb-4">
+                <label class="block font-bold text-gray-700 mb-1 text-xs sm:text-sm">NARRATIVE NOTES</label>
+                <textarea name="narrative_notes" class="w-full border border-gray-300 rounded p-2 text-sm" rows="4" placeholder="Enter detailed narrative notes here..."></textarea>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="border p-3 rounded bg-indigo-50 border-indigo-200">
+                    <h4 class="font-bold text-indigo-800 text-xs sm:text-sm mb-2">RECOGNITION OF DEATH</h4>
+                    <p class="text-[10px] text-gray-600 mb-2">It is inappropriate to commence resuscitation when the following indicators of death are present:</p>
+                    <div class="grid grid-cols-2 gap-1 text-xs sm:text-sm">
+                        <label class="flex items-center"><input type="checkbox" value="Decomposition" name="death_indicators" class="mr-1 w-4 h-4 accent-indigo-600"> Decomposition</label>
+                        <label class="flex items-center"><input type="checkbox" value="Rigor Mortis" name="death_indicators" class="mr-1 w-4 h-4 accent-indigo-600"> Rigor Mortis</label>
+                        <label class="flex items-center"><input type="checkbox" value="Incineration" name="death_indicators" class="mr-1 w-4 h-4 accent-indigo-600"> Incineration</label>
+                        <label class="flex items-center"><input type="checkbox" value="Decapitation" name="death_indicators" class="mr-1 w-4 h-4 accent-indigo-600"> Decapitation</label>
+                        <label class="flex items-center"><input type="checkbox" value="Pooling" name="death_indicators" class="mr-1 w-4 h-4 accent-indigo-600"> Pooling</label>
+                        <label class="flex items-center"><input type="checkbox" value="Incompatible with life" name="death_indicators" class="mr-1 w-4 h-4 accent-indigo-600"> Incompatible with life</label>
+                    </div>
+                    <div class="mt-2 text-xs sm:text-sm">
+                        <label class="font-semibold">Specify nature:</label>
+                        <input type="text" name="death_nature" class="w-full border-b border-gray-400 bg-transparent outline-none">
+                    </div>
+                </div>
+
+                <div class="border p-3 rounded bg-indigo-50 border-indigo-200">
+                    <h4 class="font-bold text-indigo-800 text-xs sm:text-sm mb-2">CESSATION OF RESUSCITATION</h4>
+                    <div class="space-y-2 text-xs sm:text-sm">
+                        <div class="flex flex-wrap justify-between items-center gap-1">
+                            <span>History of Coronary Disease:</span>
+                            <div class="space-x-2">
+                                <label><input type="radio" name="coronary" value="Yes" class="accent-indigo-600"> Yes</label>
+                                <label><input type="radio" name="coronary" value="No" class="accent-indigo-600"> No</label>
+                                <label><input type="radio" name="coronary" value="Undetermined" class="accent-indigo-600"> Undetermined</label>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap justify-between items-center gap-1">
+                            <span>Collapse Witnessed:</span>
+                            <div class="space-x-2">
+                                <label><input type="radio" name="collapse" value="Yes" class="accent-indigo-600"> Yes</label>
+                                <label><input type="radio" name="collapse" value="No" class="accent-indigo-600"> No</label>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div><label class="text-[10px]">Time of Collapse:</label><input type="time" name="cess_time_collapse" class="w-full border rounded px-1 text-xs"></div>
+                            <div><label class="text-[10px]">Time of Chest Pain:</label><input type="time" name="cess_time_chestpain" class="w-full border rounded px-1 text-xs"></div>
+                            <div><label class="text-[10px]">Time CPR Commenced:</label><input type="time" name="cess_time_cpr" class="w-full border rounded px-1 text-xs"></div>
+                            <div><label class="text-[10px]">Time First Analysis:</label><input type="time" name="cess_time_analysis" class="w-full border rounded px-1 text-xs"></div>
+                            <div><label class="text-[10px]">Defibrillation:</label><input type="time" name="cess_time_defib" class="w-full border rounded px-1 text-xs"></div>
+                            <div><label class="text-[10px]">Duration of CPR:</label><input type="time" name="cess_time_duration" class="w-full border rounded px-1 text-xs"></div>
+                            <div><label class="text-[10px]">Spontaneous Pulse:</label><input type="time" name="cess_time_pulse" class="w-full border rounded px-1 text-xs"></div>
+                            <div><label class="text-[10px]">Transferred To:</label><input type="time" name="cess_time_transferred" class="w-full border rounded px-1 text-xs"></div>
+                            <div><label class="text-[10px]">Hospital CPR in Progress:</label><input type="time" name="cess_time_hospital_cpr" class="w-full border rounded px-1 text-xs"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4 border-t pt-4">
+                <h4 class="font-bold text-gray-800 mb-2 text-xs sm:text-sm">REFUSAL OF TREATMENT AND/OR TRANSPORT</h4>
+                <p class="text-[10px] text-gray-600 italic mb-3">"I, the undersigned have been advised that the medical assistance on my behalf is necessary and that refusal of said medical assistance and/or transportation for further treatment may result in death, or impair my health condition. Nevertheless, I refuse to accept treatment and/or transport and assume all risk and consequences of my decision and release the PNRC Safety services Ambulance Crew from any liability arising from my refusal."</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs sm:text-sm">
+                    <div><label class="block text-[10px] font-semibold">Name of the Patient</label><input type="text" name="refusal_patient_sig" class="w-full border-b border-gray-400 outline-none"></div>
+                    <div><label class="block text-[10px] font-semibold">Witness</label><input type="text" name="refusal_witness1" class="w-full border-b border-gray-400 outline-none"></div>
+                    <div><label class="block text-[10px] font-semibold">Date Signed</label><input type="date" name="refusal_date" class="w-full border-b border-gray-400 outline-none"></div>
+                    <div><label class="block text-[10px] font-semibold">Witness</label><input type="text" name="refusal_witness2" class="w-full border-b border-gray-400 outline-none"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 9. PROVIDER INFORMATION (SLATE) -->
+        <section class="bg-white rounded-lg shadow-sm sm:shadow-md p-4 sm:p-5 border-l-4 border-slate-600 print-shadow">
+            <h3 class="text-base sm:text-lg font-bold text-slate-700 border-b pb-2 mb-3">9. PROVIDER INFORMATION</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                <div class="bg-slate-50 p-3 rounded border border-slate-200">
+                    <h4 class="font-bold text-slate-800 mb-2 text-xs sm:text-sm">Provider Information</h4>
+                    <div class="space-y-3">
+                        <div><label class="text-[10px] font-semibold">Name</label><input type="text" name="provider_name" class="w-full border-b border-gray-400 outline-none bg-transparent" placeholder="Full Name"></div>
+                        <div><label class="text-[10px] font-semibold">License No. (Nurse/Provider)</label><input type="text" name="provider_license" class="w-full border-b border-gray-400 outline-none bg-transparent" placeholder="PRC License No."></div>
+                        <div><label class="text-[10px] font-semibold">Date/Time</label><input type="datetime-local" name="provider_datetime" class="w-full border-b border-gray-400 outline-none bg-transparent text-xs"></div>
+                    </div>
+                </div>
+                <div class="bg-slate-50 p-3 rounded border border-slate-200">
+                    <h4 class="font-bold text-slate-800 mb-2 text-xs sm:text-sm">Receiving Provider</h4>
+                    <div class="space-y-3">
+                        <div><label class="text-[10px] font-semibold">Name</label><input type="text" name="receiving_name" class="w-full border-b border-gray-400 outline-none bg-transparent"></div>
+                       
+                        <div><label class="text-[10px] font-semibold">Date/Time</label><input type="datetime-local" name="receiving_datetime" class="w-full border-b border-gray-400 outline-none bg-transparent text-xs"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ADDITIONAL INFORMATION (ROSE) -->
+        <section class="bg-white rounded-lg shadow-sm sm:shadow-md p-4 sm:p-5 border-l-4 border-rose-500 print-shadow">
+            <h3 class="text-base sm:text-lg font-bold text-rose-700 border-b pb-2 mb-3">ADDITIONAL INFORMATION</h3>
+            <textarea name="additional_info" class="w-full border border-gray-300 rounded p-2 text-sm" rows="3" placeholder="Any other additional information..."></textarea>
+        </section>
+
+        <!-- ============================================================ -->
+        <!-- ACTION BUTTONS (with Logout at the END)                       -->
+        <!-- ============================================================ -->
+        <!-- ============================================================ -->
+<!-- ACTION BUTTONS                                                -->
+<!-- ============================================================ -->
+<div class="flex flex-col sm:flex-row flex-wrap justify-end gap-3 mt-6 mb-12 no-print action-buttons">
+    <button onclick="clearForm()" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded shadow transition text-sm">
+        Clear Form
+    </button>
+    <button onclick="openSignatureModal()" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded shadow transition text-sm flex items-center justify-center">
+        ✍️ Signatures
+    </button>
+    <button onclick="handleExportPDF()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-6 rounded shadow transition text-sm flex items-center justify-center">
+        📄 Export PDF
+    </button>
+    <button onclick="syncAllReports()" class="bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 px-6 rounded shadow transition text-sm flex items-center justify-center">
+        🔄 Sync All
+    </button>
+    <button onclick="saveReport()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded shadow transition text-sm flex items-center justify-center">
+        💾 Save Report
+    </button>
+    <button onclick="window.print()" class="bg-red-700 hover:bg-red-800 text-white font-bold py-3 px-6 rounded shadow transition text-sm flex items-center justify-center">
+        🖨️ Print
+    </button>
+    <a href="/admin/" onclick="return confirm('Log out and go back to the login dashboard?')"
+       class="bg-gray-800 hover:bg-black text-white font-bold py-3 px-6 rounded shadow transition text-sm flex items-center justify-center gap-2">
+        🚪 Logout
+    </a>
+</div>
+
+    </main>
+
+    <!-- ============================================================ -->
+    <!-- MOBILE BOTTOM NAV                                             -->
+    <!-- ============================================================ -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg md:hidden z-40 no-print mobile-nav">
+        <div class="flex justify-around items-center h-16">
+            <button onclick="scrollToSection('section1')" class="flex flex-col items-center text-gray-500 hover:text-red-600 text-xs">
+                <svg class="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+                Incident
+            </button>
+            <button onclick="scrollToSection('vitals')" class="flex flex-col items-center text-gray-500 hover:text-emerald-600 text-xs">
+                <svg class="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                Vitals
+            </button>
+            <button onclick="scrollToSection('care')" class="flex flex-col items-center text-gray-500 hover:text-purple-600 text-xs">
+                <svg class="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
+                Care
+            </button>
+            <button onclick="scrollToSection('notes')" class="flex flex-col items-center text-gray-500 hover:text-indigo-600 text-xs">
+                <svg class="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                Notes
+            </button>
+        </div>
+    </nav>
+
+    <!-- ============================================================ -->
+    <!-- SCRIPTS                                                      -->
+    <!-- ============================================================ -->
+    <script src="/db.js"></script>
+    <script src="/signature.js"></script>
+    <script src="/pdf-export.js"></script>
+    <script src="/app.js"></script>
+
+
+    
+    <script>
+    // ============================================================
+    // AUTO-CALCULATE GCS
+    // ============================================================
+    function calculateGCS() {
+        const eye = parseInt(document.getElementById('gcs_eye')?.value) || 0;
+        const verbal = parseInt(document.getElementById('gcs_verbal')?.value) || 0;
+        const motor = parseInt(document.getElementById('gcs_motor')?.value) || 0;
+
+        const totalField = document.getElementById('gcs_total');
+
+        if (!totalField) return;
+
+        // If any field is empty, show blank
+        if (!eye && !verbal && !motor) {
+            totalField.value = '';
+            return;
+        }
+
+        // If all three are filled, show total
+        if (eye && verbal && motor) {
+            const total = eye + verbal + motor;
+            totalField.value = total;
+
+            // Color code by severity
+            totalField.classList.remove('text-emerald-700', 'bg-emerald-100', 'text-red-700', 'bg-red-100', 'text-amber-700', 'bg-amber-100');
+
+            if (total >= 13) {
+                totalField.classList.add('text-emerald-700', 'bg-emerald-100');
+            } else if (total >= 9) {
+                totalField.classList.add('text-amber-700', 'bg-amber-100');
+            } else {
+                totalField.classList.add('text-red-700', 'bg-red-100');
+            }
+        } else {
+            totalField.value = '';
+        }
+    }
+
+    // Interactive body map
+    document.querySelectorAll('.body-part').forEach(part => {
+        part.addEventListener('click', function() {
+            this.classList.toggle('active');
+            if (navigator.vibrate) navigator.vibrate(50);
+        });
+    });
+
+    // Mobile nav scroll
+    function scrollToSection(id) {
+        const sections = document.querySelectorAll('section h3');
+        let targetSection = null;
+        if (id === 'section1') targetSection = sections[0]?.closest('section');
+        if (id === 'vitals') targetSection = Array.from(sections).find(h => h.textContent.includes('VITAL SIGNS'))?.closest('section');
+        if (id === 'care') targetSection = Array.from(sections).find(h => h.textContent.includes('CARE MANAGEMENT'))?.closest('section');
+        if (id === 'notes') targetSection = Array.from(sections).find(h => h.textContent.includes('NARRATIVE'))?.closest('section');
+        if (targetSection) targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // Offline indicator
+    window.addEventListener('online', () => {
+        document.body.classList.remove('offline');
+        if (typeof syncAllReports === 'function') {
+            syncAllReports().catch(err => console.warn('Auto-sync failed:', err));
+        }
+    });
+    window.addEventListener('offline', () => document.body.classList.add('offline'));
+    if (!navigator.onLine) document.body.classList.add('offline');
+    </script>
+</body>
+</html>
